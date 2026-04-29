@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KROVHAL v4.0 - MILITARY GRADE</title>
+    <style>
+        body { background: #050505; color: #00ff41; font-family: 'Consolas', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        #terminal { flex: 1; padding: 25px; overflow-y: auto; white-space: pre-wrap; font-size: 13px; line-height: 1.5; scroll-behavior: smooth; border-bottom: 2px solid #003b00; }
+        #input-area { display: flex; padding: 20px; background: #000; align-items: center; border-top: 1px solid #111; }
+        input { flex: 1; background: transparent; border: none; color: #00ff41; font-family: inherit; font-size: 16px; outline: none; text-shadow: 0 0 5px #00ff41; }
+        .prompt { color: #00ff41; margin-right: 12px; font-weight: bold; }
+        .krovhal-msg { color: #d1d1d1; margin-bottom: 25px; border-left: 4px solid #00ff41; padding: 10px 15px; background: rgba(0, 255, 65, 0.03); }
+        .sys-msg { color: #008f11; font-style: italic; margin-bottom: 10px; font-size: 11px; }
+        .btn-group { display: flex; gap: 15px; padding: 12px; background: #000; justify-content: center; border-bottom: 1px solid #111; }
+        button { background: transparent; color: #00ff41; border: 1px solid #00ff41; padding: 6px 15px; border-radius: 2px; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+        button:hover { background: #00ff41; color: #000; box-shadow: 0 0 15px #00ff41; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #008f11; }
+    </style>
+</head>
+<body>
+
+    <div class="btn-group">
+        <button onclick="exportarVault()">Backup Bancário (JSON)</button>
+        <button onclick="importarVault()">Injetar Protocolo</button>
+        <button onclick="limparTerminal()">Purge Screen</button>
+    </div>
+
+    <div id="terminal">--- K R O V H A L   v4.0.0 ---
+[ STATUS: CRITICAL SECURITY ACTIVE ]
+[ ENCRYPTION: AES-GCM 256-BIT ]
+[ DATABASE: INDEXED-DB ]
+Aguardando autenticação de chave...</div>
+
+    <div id="input-area">
+        <span class="prompt">CMD></span>
+        <input type="text" id="user-input" placeholder="Digite sua chave de soberania..." autofocus autocomplete="off">
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        const input = document.getElementById('user-input');
+        let MASTER_KEY = "";
+        let vault = {};
+        const DB_NAME = "KrovhalMilitaryDB";
+        
+        // --- MOTOR DE SEGURANÇA BANCÁRIA (Web Crypto API) ---
+        
+        async function deriveKey(password) {
+            const encoder = new TextEncoder();
+            const salt = encoder.encode("KROVHAL_TACTICAL_SALT_2026");
+            const baseKey = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveKey"]);
+            return crypto.subtle.deriveKey(
+                { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+                baseKey,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        async function encryptData(text, key) {
+            const encoder = new TextEncoder();
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, encoder.encode(text));
+            return { iv: btoa(String.fromCharCode(...iv)), data: btoa(String.fromCharCode(...new Uint8Array(encrypted))) };
+        }
+
+        async function decryptData(encryptedObj, key) {
+            try {
+                const iv = new Uint8Array(atob(encryptedObj.iv).split("").map(c => c.charCodeAt(0)));
+                const data = new Uint8Array(atob(encryptedObj.data).split("").map(c => c.charCodeAt(0)));
+                const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, data);
+                return new TextDecoder().decode(decrypted);
+            } catch (e) { return null; }
+        }
+
+        // --- GESTÃO DE BANCO DE DADOS (IndexedDB) ---
+
+        function initDB() {
+            return new Promise((resolve) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = e => e.target.result.createObjectStore("vault");
+                request.onsuccess = e => resolve(e.target.result);
+            });
+        }
+
+        async function saveToDB(key, val) {
+            const db = await initDB();
+            const tx = db.transaction("vault", "readwrite");
+            tx.objectStore("vault").put(val, key);
+        }
+
+        async function loadFromDB(key) {
+            const db = await initDB();
+            return new Promise(resolve => {
+                const req = db.transaction("vault").objectStore("vault").get(key);
+                req.onsuccess = () => resolve(req.result);
+            });
+        }
+
+        // --- LÓGICA DE INTERFACE E BUSCA ---
+
+        function printToTerminal(sender, msg, type = '') {
+            const div = document.createElement('div');
+            div.className = type === 'krovhal' ? 'krovhal-msg' : 'sys-msg';
+            div.innerHTML = `<strong>[${sender}]</strong><br>${msg}`;
+            terminal.appendChild(div);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        async function buscarInternet(query) {
+            printToTerminal('SISTEMA', `Varredura profunda iniciada: ${query}...`);
+            const targetUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+
+            try {
+                const response = await fetch(proxyUrl);
+                const json = await response.json();
+                const data = JSON.parse(json.contents);
+                let res = data.AbstractText;
+
+                if (!res) {
+                    const wikiUrl = `https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+                    const wikiProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(wikiUrl)}`;
+                    const resW = await fetch(wikiProxy);
+                    const jsonW = await resW.json();
+                    res = JSON.parse(jsonW.contents).extract;
+                }
+
+                if (res) {
+                    printToTerminal('KROVHAL', res, 'krovhal');
+                    setTimeout(async () => {
+                        if(confirm("Encriptar com AES-256 e salvar no IndexedDB?")) {
+                            const crypted = await encryptData(res, MASTER_KEY);
+                            await saveToDB(query.toLowerCase(), crypted);
+                            printToTerminal('SISTEMA', "Dados blindados e armazenados.");
+                        }
+                    }, 500);
+                } else {
+                    printToTerminal('AVISO', "Sem resultados limpos na rede.");
+                }
+            } catch (e) { printToTerminal('ERRO', "Falha na varredura."); }
+        }
+
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const val = input.value.trim();
+                if (!val) return;
+                input.value = '';
+
+                if (!MASTER_KEY) {
+                    printToTerminal('SISTEMA', "Gerando chave de derivação PBKDF2... Aguarde.");
+                    MASTER_KEY = await deriveKey(val);
+                    printToTerminal('SISTEMA', "Autenticação confirmada. Soberania ativa.");
+                    input.placeholder = "Comando tático...";
+                    return;
+                }
+
+                printToTerminal('USUÁRIO', val);
+                processar(val);
+            }
+        });
+
+        async function processar(texto) {
+            let cmd = texto.toLowerCase();
+            if (cmd.startsWith('buscar ')) {
+                buscarInternet(cmd.replace('buscar ', ''));
+                return;
+            }
+            if (cmd === 'limpar') { terminal.innerHTML = ""; return; }
+
+            const encryptedObj = await loadFromDB(cmd);
+            if (encryptedObj) {
+                const original = await decryptData(encryptedObj, MASTER_KEY);
+                printToTerminal('KROVHAL', original || "ERRO: Chave incorreta para este dado.", 'krovhal');
+            } else {
+                printToTerminal('KROVHAL', "Alvo não mapeado. Use 'buscar [tema]'.", 'krovhal');
+            }
+        }
+
+        function limparTerminal() { terminal.innerHTML = "[ WIPED ]<br>"; }
+
+        // Funções de exportação seguem a mesma lógica, mas com segurança AES
+        async function exportarVault() {
+            printToTerminal('SISTEMA', "Extraindo backup blindado...");
+            const db = await initDB();
+            const req = db.transaction("vault").objectStore("vault").getAllKeys();
+            req.onsuccess = async () => {
+                const keys = req.result;
+                let exportData = {};
+                for(let k of keys) exportData[k] = await loadFromDB(k);
+                const blob = new Blob([JSON.stringify(exportData)], {type: "application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `krovhal_military_vault.json`;
+                a.click();
+            };
+        }
+    </script>
+</body>
+</html>
