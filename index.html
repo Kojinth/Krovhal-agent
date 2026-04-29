@@ -4,79 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KROVHAL v2.1.0 | SWA</title>
-    
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
-
     <style>
-        :root { --main-green: #00ff41; --bg-black: #050505; --panel-bg: #0a0a0a; }
-        * { box-sizing: border-box; }
-        body { 
-            background-color: var(--bg-black); 
-            color: var(--main-green); 
-            font-family: 'Consolas', 'Courier New', monospace; 
-            margin: 0; 
-            height: 100vh; 
-            display: flex; 
-            flex-direction: column;
-        }
-        
-        /* Header Tático */
-        header {
-            padding: 10px 20px;
-            background: var(--panel-bg);
-            border-bottom: 1px solid #1a1a1a;
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            letter-spacing: 1px;
-        }
-
-        /* Terminal UX */
-        #terminal {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            font-size: 14px;
-            line-height: 1.6;
-        }
-
-        .user-line { color: #fff; font-weight: bold; margin-top: 10px; }
-        .krovhal-line { color: var(--main-green); margin-bottom: 15px; border-left: 2px solid #003b00; padding-left: 10px; }
-        .sys-msg { color: #888; font-size: 11px; }
-
-        /* Input Area */
-        .input-container {
-            background: var(--panel-bg);
-            padding: 15px 20px;
-            border-top: 1px solid #1a1a1a;
-            display: flex;
-            align-items: center;
-        }
+        :root { --green: #00ff41; --bg: #050505; }
+        body { background: var(--bg); color: var(--green); font-family: 'Consolas', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+        header { padding: 10px 20px; background: #0a0a0a; border-bottom: 1px solid #1a1a1a; font-size: 12px; display: flex; justify-content: space-between; }
+        #terminal { flex: 1; padding: 20px; overflow-y: auto; white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+        .input-area { background: #0a0a0a; padding: 15px; border-top: 1px solid #1a1a1a; display: flex; }
+        input { background: transparent; border: none; color: #fff; flex: 1; outline: none; font-family: inherit; font-size: 16px; }
         .prompt { margin-right: 10px; font-weight: bold; }
-        input {
-            background: transparent;
-            border: none;
-            color: #fff;
-            flex: 1;
-            font-family: inherit;
-            font-size: 16px;
-            outline: none;
-        }
-
-        /* Loading Overlay */
-        #loading {
-            position: fixed;
-            inset: 0;
-            background: var(--bg-black);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
-            flex-direction: column;
-        }
-        .spinner { width: 40px; height: 40px; border: 2px solid #003b00; border-top-color: var(--main-green); border-radius: 50%; animation: spin 1s linear infinite; }
+        #loading { position: fixed; inset: 0; background: var(--bg); display: flex; justify-content: center; align-items: center; z-index: 100; flex-direction: column; }
+        .spinner { width: 30px; height: 30px; border: 2px solid #003b00; border-top-color: var(--green); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
@@ -84,24 +23,20 @@
 
     <div id="loading">
         <div class="spinner"></div>
-        <p style="margin-top: 15px; font-size: 12px;">INICIANDO MOTOR PYTHON V3.11...</p>
+        <p style="font-size: 10px; margin-top: 10px;">CARREGANDO VAULT ENCRIPTADO...</p>
     </div>
 
     <header>
-        <span>KROVHAL SWA [V.2.1.0]</span>
-        <span id="status">STATUS: ONLINE</span>
+        <span>KROVHAL TACTICAL SWA</span>
+        <span id="clock">00:00:00</span>
     </header>
 
     <div id="terminal"></div>
 
-    <div class="input-container">
-        <span class="prompt">USUÁRIO ></span>
-        <input type="text" id="user-input" placeholder="Aguardando comando..." autocomplete="off" autofocus>
+    <div class="input-area">
+        <span class="prompt" id="prompt-label">USUÁRIO ></span>
+        <input type="text" id="user-input" autocomplete="off" autofocus>
     </div>
-
-    <py-config>
-        packages = ["requests"]
-    </py-config>
 
     <script type="py">
         import js
@@ -110,107 +45,128 @@
         import textwrap
         import re
         from datetime import datetime
+        from difflib import get_close_matches
+        from pyodide.ffi import create_proxy
 
         class KrovhalWeb:
             def __init__(self):
-                self.usuario = "USUÁRIO"
-                self.largura_tela = 50
-                self.chave = hashlib.sha256(self.usuario.encode()).digest()
+                self.usuario = "Usuário"
+                self.largura_tela = 45
                 self.versao = "2.1.0"
+                self.chave = hashlib.sha256(self.usuario.encode()).digest()
+                self.modo_aprendizado = False
+                self.termo_pendente = ""
                 self.carregar_vault()
 
             def _xor_cipher(self, data):
                 return bytes([data[i] ^ self.chave[i % len(self.chave)] for i in range(len(data))])
 
             def carregar_vault(self):
-                # Carrega do LocalStorage do navegador
                 dados = js.localStorage.getItem('krovhal_vault_bin')
                 if dados:
                     try:
-                        # Converte de volta de string para bytes para decriptar
                         dados_bytes = bytes.fromhex(dados)
-                        decriptados = self._xor_cipher(dados_bytes)
-                        self.cerebro = json.loads(decriptados.decode())
-                    except:
-                        self.cerebro = {"oi": "Sistema Ativo. Vault Inicializado."}
+                        self.cerebro = json.loads(self._xor_cipher(dados_bytes).decode())
+                    except: self.cerebro = {"oi": "Sistema Reiniciado."}
                 else:
-                    self.cerebro = {"oi": "Sistema Ativo. Vault Inicializado."}
+                    self.cerebro = {"oi": "Sistema Krovhal v2.1.0 Ativo."}
 
             def salvar_vault(self):
-                dados_json = json.dumps(self.cerebro).encode()
-                encriptados = self._xor_cipher(dados_json)
-                # Salva como hex no LocalStorage
-                js.localStorage.setItem('krovhal_vault_bin', encriptados.hex())
+                dados = self._xor_cipher(json.dumps(self.cerebro).encode())
+                js.localStorage.setItem('krovhal_vault_bin', dados.hex())
 
             def limpar_resultado(self, texto):
-                lixo = [r"\d{1,2} de \w+ de \d{4}", r"Ouça também no Spotify!", r"Ouça no Spotify", r"Leia mais", r"Confira abaixo", r"Siga-nos", r"Compartilhe", r"http\S+"]
-                for padrao in lixo:
-                    texto = re.sub(padrao, "", texto, flags=re.IGNORECASE)
-                texto = texto.strip()
-                ultimo_ponto = texto.rfind('.')
-                if ultimo_ponto != -1 and ultimo_ponto > len(texto) * 0.5:
-                    texto = texto[:ultimo_ponto + 1]
-                return texto
+                lixo = [r"\d{1,2} de \w+ de \d{4}", r"Ouça também no Spotify!", r"Siga-nos", r"http\S+"]
+                for p in lixo: texto = re.sub(p, "", texto, flags=re.IGNORECASE)
+                return texto.strip()
 
             def formatar(self, texto):
                 return "\n".join(textwrap.wrap(str(texto), width=self.largura_tela))
 
-        # --- INTEGRAÇÃO COM A INTERFACE ---
+        # Instância
         agent = KrovhalWeb()
         term = js.document.getElementById('terminal')
         inp = js.document.getElementById('user-input')
+        label = js.document.getElementById('prompt-label')
 
-        def print_web(sender, msg, css_class=""):
+        def print_w(sender, msg, color="#fff"):
             div = js.document.createElement('div')
-            div.className = css_class
+            div.style.color = color
+            div.style.marginBottom = "10px"
             div.innerHTML = f"<strong>{sender} ></strong><br>{msg}"
             term.appendChild(div)
             term.scrollTop = term.scrollHeight
 
-        async def handle_input(event):
+        async def processar_comando(event):
             if event.key == "Enter":
                 val = inp.value.strip()
                 inp.value = ""
                 if not val: return
 
-                print_web("USUÁRIO", val, "user-line")
+                # MODO APRENDIZADO (IGUAL AO SEU INPUT >>)
+                if agent.modo_aprendizado:
+                    agent.cerebro[agent.termo_pendente] = val
+                    agent.salvar_vault()
+                    print_w("SISTEMA", "Padrão encriptado na memória.", "#888")
+                    agent.modo_aprendizado = False
+                    agent.termo_pendente = ""
+                    label.innerHTML = "USUÁRIO >"
+                    return
+
+                print_w("USUÁRIO", val)
+                cmd = val.lower()
+
+                # COMANDOS DE SISTEMA
+                if "hora" in cmd:
+                    print_w("KROVHAL", datetime.now().strftime('%H:%M:%S'))
+                    return
                 
-                # Lógica Tática
-                val_lower = val.lower()
-                
-                if val_lower.startswith("buscar "):
-                    query = val_lower.replace("buscar ", "")
-                    print_web("SISTEMA", f"Iniciando varredura para: {query}...", "sys-msg")
-                    
-                    # Busca via API (Usando o fetch do JS dentro do Python)
+                if cmd.startswith("buscar "):
+                    query = cmd.replace("buscar ", "")
+                    print_w("SISTEMA", f"Iniciando varredura tática: {query}...", "#888")
                     try:
-                        url = f"https://pt.wikipedia.org/api/rest_v1/page/summary/{query}"
-                        resp = await js.fetch(url)
-                        data = await resp.json()
-                        res = data.extract if data.extract else "Dados insuficientes."
+                        # Busca via Wikipedia (mais estável para Web)
+                        r = await js.fetch(f"https://pt.wikipedia.org/api/rest_v1/page/summary/{query}")
+                        d = await r.json()
+                        res = d.extract if d.extract else "Dados escassos."
                         res_limpo = agent.limpar_resultado(res)
+                        print_w("KROVHAL", agent.formatar(res_limpo))
                         
-                        print_web("KROVHAL", agent.formatar(res_limpo), "krovhal-line")
-                        
-                        if js.confirm("Deseja encriptar e salvar no Vault?"):
+                        # LOGICA DE APRENDIZADO SELETIVO (CONFIRM)
+                        if js.confirm("Encriptar na memória local?"):
                             agent.cerebro[query] = res_limpo
                             agent.salvar_vault()
-                            print_web("SISTEMA", "Conhecimento assimilado.", "sys-msg")
+                            print_w("SISTEMA", "Conhecimento assimilado.", "#888")
                     except:
-                        print_web("ERRO", "Falha na conexão externa.", "sys-msg")
-                
-                elif val_lower in agent.cerebro:
-                    print_web("KROVHAL", agent.formatar(agent.cerebro[val_lower]), "krovhal-line")
-                else:
-                    print_web("KROVHAL", "Padrão desconhecido. Use 'buscar [tema]'.", "krovhal-line")
+                        print_w("ERRO", "Falha na conexão externa.")
+                    return
 
-        # Inicia eventos
-        from pyodide.ffi import create_proxy
-        inp.addEventListener("keypress", create_proxy(handle_input))
+                # BUSCA NO CÉREBRO
+                if cmd in agent.cerebro:
+                    print_w("KROVHAL", agent.formatar(agent.cerebro[cmd]))
+                else:
+                    # CLOSE MATCHES
+                    matches = get_close_matches(cmd, agent.cerebro.keys(), n=1, cutoff=0.5)
+                    if matches:
+                        print_w("KROVHAL (Sugerido)", agent.formatar(agent.cerebro[matches[0]]))
+                    else:
+                        # ENTRA NO MODO APRENDIZADO IGUAL AO SEU CÓDIGO
+                        print_w("KROVHAL", f"Não conheço '{val}'. O que devo responder?")
+                        agent.modo_aprendizado = True
+                        agent.termo_pendente = cmd
+                        label.innerHTML = "ENSINAR >"
+                        label.style.color = "#ff0000"
+
+        # Event Listeners
+        inp.addEventListener("keypress", create_proxy(processar_comando))
         
-        # Remove loading
+        # Clock & UI
+        def update_clock():
+            js.document.getElementById('clock').innerHTML = datetime.now().strftime('%H:%M:%S')
+        js.setInterval(create_proxy(update_clock), 1000)
+        
         js.document.getElementById('loading').style.display = 'none'
-        print_web("SISTEMA", f"KROVHAL v{agent.versao} carregado com sucesso.", "sys-msg")
+        print_w("SISTEMA", "KROVHAL v2.1.0 ONLINE. SOBERANIA ATIVA.")
     </script>
 </body>
 </html>
